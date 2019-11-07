@@ -476,6 +476,17 @@ Miew.prototype._initGfx = function () {
   light3.layers.enable(gfxutils.LAYERS.TRANSPARENT);
   gfx.scene.add(light3);
 
+  /* Try to add plane with simple mesh to check shadowmap produced by sprites
+  const ground = new THREE.Mesh(
+    new THREE.PlaneBufferGeometry(800, 800).rotateX(-Math.PI / 2),
+    new THREE.MeshPhongMaterial({ color: 0x888888 }),
+  );
+  ground.position.set(0, 0, 0);
+  ground.receiveShadow = true;
+  ground.layers.enable(gfxutils.LAYERS.TRANSPARENT);
+  ground.layers.enable(gfxutils.LAYERS.DEFAULT);
+  gfx.scene.add(ground); */
+
   // add axes
   gfx.axes = new Axes(gfx.root, gfx.camera);
   const deviceWidth = gfx.width * pixelRatio;

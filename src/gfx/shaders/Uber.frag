@@ -15,8 +15,11 @@
 #if defined(USE_LIGHTS) && defined(SHADOWMAP)
 	#if NUM_DIR_LIGHTS > 0
 		uniform sampler2D directionalShadowMap[ NUM_DIR_LIGHTS ];
+    uniform mat4 directionalShadowMatrix[ NUM_DIR_LIGHTS ]; //only for sprites
 		varying vec4 vDirectionalShadowCoord[ NUM_DIR_LIGHTS ];
 		varying vec3 vDirectionalShadowNormal[ NUM_DIR_LIGHTS ];
+    vec4 vDirLightWorldCoord[ NUM_DIR_LIGHTS ];
+    vec3 vDirLightWorldNormal[ NUM_DIR_LIGHTS ];
 
     #ifdef SHADOWMAP_PCF_RAND
       // We use 4 instead uniform variable or define because this value is used in for(... i < value; ...) with
@@ -80,7 +83,10 @@ varying vec3 vViewPosition;
 
 #if defined(SPHERE_SPRITE) || defined(CYLINDER_SPRITE)
   uniform float zOffset;
-  uniform mat4 projectionMatrix;
+  // think how we can do it in better way (without this check when both shadows and sprites are used we have redefinition of projectionMatrix and it is shader error)
+  #if !defined(SHADOWMAP_PCF_RAND)
+    uniform mat4 projectionMatrix;
+  #endif
 
   float calcDepthForSprites(vec4 pixelPosEye, float zOffset, mat4 projMatrix) {
     vec4 pixelPosScreen = projMatrix * pixelPosEye;
@@ -321,6 +327,9 @@ float unpackRGBAToDepth( const in vec4 v ) {
           shadow /= float( 4 ); // 4 is length of _samplesKernel which is defined in UberMaterial.js
         #endif
       }
+      /* show shadowmap
+      shadow = unpackRGBAToDepth( texture2D( shadowMap, shadowCoord.xy ) );*/
+
       return shadow;//(shadow != 1.0) ? 0.5 : 1.0;//vec4(shadow, shadow, shadow, 1.0);
    }
   #endif
@@ -393,7 +402,7 @@ float unpackRGBAToDepth( const in vec4 v ) {
   	#pragma unroll_loop
   	  for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {
   	    #ifdef SHADOWMAP
-  	    if ( directionalLights[ i ].shadow > 0 ) shadowMask = getShadow( directionalShadowMap[ i ], directionalLights[ i ], vDirectionalShadowCoord[ i ], vViewPosition, vDirectionalShadowNormal[ i ] );
+  	    if ( directionalLights[ i ].shadow > 0 ) shadowMask = getShadow( directionalShadowMap[ i ], directionalLights[ i ], vDirLightWorldCoord[ i ], vViewPosition, vDirLightWorldNormal[ i ] );
   	    #endif
 
   		  if ( shadowMask > 0.0 ) RE_Direct_BlinnPhong( directionalLights[ i ], geometry, material, reflectedLight, shadowMask );
@@ -401,6 +410,8 @@ float unpackRGBAToDepth( const in vec4 v ) {
 
     RE_IndirectDiffuse_BlinnPhong(irradiance, material, reflectedLight);
 
+    /* show shadowmap
+    return packDepthToRGBA(shadowMask).xyz; */
     return saturate(reflectedLight.indirectDiffuse + reflectedLight.directDiffuse + reflectedLight.directSpecular);
   }
 #endif
@@ -424,6 +435,16 @@ void main() {
 #endif
 
   vec4 pixelPosWorld = vec4(vWorldPosition, 1.0);
+  #if defined(USE_LIGHTS) && defined(SHADOWMAP)
+    #if NUM_DIR_LIGHTS > 0
+    // see THREE.WebGLProgram.unrollLoops
+    #pragma unroll_loop
+      for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {
+        vDirLightWorldCoord[ i ] = vDirectionalShadowCoord[ i ];
+        vDirLightWorldNormal[ i ] = vDirectionalShadowNormal[ i ];
+      }
+    #endif
+  #endif
   vec4 pixelPosEye;
 
 #ifdef SPHERE_SPRITE
@@ -456,6 +477,18 @@ void main() {
     normal = normalize(normalMatrix * p);
     #ifdef NORMALS_TO_G_BUFFER
       viewNormalSprites = normalize(mat3(modelViewMatrix)*p);
+    #endif
+
+    #if defined(USE_LIGHTS) && defined(SHADOWMAP)
+      #if NUM_DIR_LIGHTS > 0
+        // see THREE.WebGLProgram.unrollLoops
+        #pragma unroll_loop
+          for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {
+            vDirLightWorldCoord[ i ] = directionalShadowMatrix[ i ] * pixelPosWorld;
+            //vDirLightWorldNormal[ i ] = (directionalShadowMatrix[ i ] * normalize(mat3(modelMatrix)*p)).xyz;
+            //vDirLightWorldNormal[ i ] = (directionalShadowMatrix[ i ] * normalize((modelMatrix * vec4(normal, 0.0)))).xyz;
+          }
+      #endif
     #endif
   }
 
@@ -570,9 +603,16 @@ void main() {
   #endif
 
   #if defined(USE_LIGHTS) && NUM_DIR_LIGHTS > 0
-    GeometricContext geometry = GeometricContext(normal, normalize( vViewPosition ));
-    BlinnPhongMaterial material = BlinnPhongMaterial(diffuseColor.rgb, specular, shininess);
-    vec3 outgoingLight = calcLighting(geometry, material, vViewPosition);
+    // think how we can do it in better way
+    #if defined(SPHERE_SPRITE) || defined(CYLINDER_SPRITE)
+      GeometricContext geometry = GeometricContext(normal, normalize( -pixelPosEye.xyz ));
+      BlinnPhongMaterial material = BlinnPhongMaterial(diffuseColor.rgb, specular, shininess);
+      vec3 outgoingLight = calcLighting(geometry, material, -pixelPosEye.xyz);
+    #else
+      GeometricContext geometry = GeometricContext(normal, normalize( vViewPosition ));
+      BlinnPhongMaterial material = BlinnPhongMaterial(diffuseColor.rgb, specular, shininess);
+      vec3 outgoingLight = calcLighting(geometry, material, vViewPosition);
+    #endif
   #else
     vec3 outgoingLight = diffuseColor.rgb;
   #endif
