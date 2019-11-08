@@ -14,7 +14,7 @@ export default function (SuperClass) {
 
     onBeforeShadow(renderer, scene, camera, geometry, material, group) {
       this._onBeforeShadow(renderer, scene, camera, geometry, material, group);
-      //this._update();
+      // this._update();
     }
 
     _onBeforeRender() {
